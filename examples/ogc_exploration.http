@@ -1,0 +1,64 @@
+### 1. Landing Page — what does this OGC server offer?
+GET https://demo.pygeoapi.io/master/
+Accept: application/json
+
+###
+
+### 2. Conformance — what OGC standards does it support?
+GET https://demo.pygeoapi.io/master/conformance
+Accept: application/json
+
+###
+
+### 3. OGC API - Features: List all collections
+GET https://demo.pygeoapi.io/master/collections
+Accept: application/json
+
+###
+
+### 4. OGC API - Features: Get items from a specific collection
+GET https://demo.pygeoapi.io/master/collections/lakes/items?limit=3
+Accept: application/json
+
+###
+
+### 5. OGC API - Features: Filter by bounding box
+GET https://demo.pygeoapi.io/master/collections/lakes/items?bbox=-180,-90,180,90&limit=5
+Accept: application/json
+
+###
+
+### 6. OGC API - Records: Search the catalog
+GET https://demo.pygeoapi.io/master/collections/dutch-metadata/items?limit=3
+Accept: application/json
+
+###
+
+### 7. OGC API - Processes: List available processes
+GET https://demo.pygeoapi.io/master/processes
+Accept: application/json
+
+###
+
+### 8. OGC API - Processes: Get details of hello-world process
+GET https://demo.pygeoapi.io/master/processes/hello-world
+Accept: application/json
+
+###
+
+### 9. OGC API - Processes: EXECUTE a process (POST)
+POST https://demo.pygeoapi.io/master/processes/hello-world/execution
+Content-Type: application/json
+
+{
+    "inputs": {
+        "name": "GSoC MCP Project",
+        "message": "Hello from our MCP server!"
+    }
+}
+
+###
+
+### 10. OGC API - EDR: Get environmental data collections
+GET https://demo.pygeoapi.io/master/collections/icoads-sst
+Accept: application/json
