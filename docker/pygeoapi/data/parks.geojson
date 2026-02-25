@@ -1,0 +1,71 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "1",
+      "properties": {
+        "id": "1",
+        "name": "Central Park",
+        "area_ha": 341.1,
+        "city": "Münster",
+        "tree_coverage": 0.65,
+        "has_water": true
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7.600, 51.950],
+          [7.620, 51.950],
+          [7.620, 51.965],
+          [7.600, 51.965],
+          [7.600, 51.950]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "2",
+      "properties": {
+        "id": "2",
+        "name": "Aasee Park",
+        "area_ha": 52.3,
+        "city": "Münster",
+        "tree_coverage": 0.45,
+        "has_water": true
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7.610, 51.940],
+          [7.625, 51.940],
+          [7.625, 51.950],
+          [7.610, 51.950],
+          [7.610, 51.940]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "3",
+      "properties": {
+        "id": "3",
+        "name": "Schlosspark",
+        "area_ha": 18.7,
+        "city": "Münster",
+        "tree_coverage": 0.80,
+        "has_water": false
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7.612, 51.962],
+          [7.622, 51.962],
+          [7.622, 51.968],
+          [7.612, 51.968],
+          [7.612, 51.962]
+        ]]
+      }
+    }
+  ]
+}
