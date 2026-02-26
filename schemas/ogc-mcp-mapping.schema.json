@@ -1,0 +1,310 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/hanzila1/ogc-mcp-server/schemas/ogc-mcp-mapping.schema.json",
+  "title": "OGC API to MCP Mapping Specification",
+  "description": "A formal, extensible, machine-readable specification that translates core OGC API concepts (Features, Records, EDR, Processes) into MCP (Model Context Protocol) concepts (Tools, Resources, Prompts). Developed for GSoC 2026 — 52°North project 'MCP for OGC APIs'.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["metadata", "mappings"],
+  "properties": {
+    "metadata": {
+      "$ref": "#/$defs/SpecificationMetadata"
+    },
+    "mappings": {
+      "type": "object",
+      "description": "The complete set of OGC API to MCP concept mappings, organized by OGC API type.",
+      "required": ["common", "features", "records", "edr", "processes"],
+      "properties": {
+        "common": { "$ref": "#/$defs/OGCCommonMapping" },
+        "features": { "$ref": "#/$defs/OGCFeaturesMapping" },
+        "records": { "$ref": "#/$defs/OGCRecordsMapping" },
+        "edr": { "$ref": "#/$defs/OGCEDRMapping" },
+        "processes": { "$ref": "#/$defs/OGCProcessesMapping" }
+      }
+    }
+  },
+
+  "$defs": {
+
+    "SpecificationMetadata": {
+      "type": "object",
+      "description": "Metadata about this mapping specification.",
+      "required": ["title", "version", "ogc_api_versions", "mcp_version", "license"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "const": "OGC API to MCP Mapping Specification"
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of this mapping specification."
+        },
+        "ogc_api_versions": {
+          "type": "object",
+          "description": "Versions of OGC API standards this mapping targets.",
+          "properties": {
+            "common": { "type": "string" },
+            "features": { "type": "string" },
+            "records": { "type": "string" },
+            "edr": { "type": "string" },
+            "processes": { "type": "string" }
+          }
+        },
+        "mcp_version": {
+          "type": "string",
+          "description": "Version of MCP specification this mapping targets."
+        },
+        "license": {
+          "type": "string",
+          "const": "Apache-2.0"
+        },
+        "authors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "MCPPrimitive": {
+      "type": "string",
+      "enum": ["Tool", "Resource", "Prompt"],
+      "description": "The three core MCP server primitives that OGC concepts can map to."
+    },
+
+    "MappingRule": {
+      "type": "object",
+      "description": "A single mapping rule that translates one OGC API concept into one or more MCP primitives.",
+      "required": ["ogc_concept", "mcp_primitive", "rationale", "mapping_details"],
+      "properties": {
+        "ogc_concept": {
+          "type": "string",
+          "description": "The OGC API concept being mapped (e.g., 'Collection', 'Process', 'Feature')."
+        },
+        "ogc_endpoint": {
+          "type": "string",
+          "description": "The OGC API endpoint pattern (e.g., '/collections', '/processes/{processId}')."
+        },
+        "ogc_http_method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+          "description": "The HTTP method used in the OGC API for this operation."
+        },
+        "mcp_primitive": {
+          "$ref": "#/$defs/MCPPrimitive"
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why this OGC concept maps to this specific MCP primitive. Critical for understanding and extensibility."
+        },
+        "mapping_details": {
+          "type": "object",
+          "description": "Detailed field-level mapping between OGC and MCP.",
+          "properties": {
+            "mcp_name_template": {
+              "type": "string",
+              "description": "Template for generating the MCP name. Variables use {ogc_field} syntax."
+            },
+            "mcp_description_template": {
+              "type": "string",
+              "description": "Template for generating the MCP description."
+            },
+            "field_mappings": {
+              "type": "array",
+              "description": "Ordered list of field-level translations.",
+              "items": { "$ref": "#/$defs/FieldMapping" }
+            }
+          }
+        },
+        "uri_scheme": {
+          "type": "string",
+          "description": "For Resources: the URI scheme used (e.g., 'ogc://{server}/collections/{id}')."
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "For Tools: the JSON Schema describing the MCP Tool's inputSchema."
+        }
+      }
+    },
+
+    "FieldMapping": {
+      "type": "object",
+      "description": "Maps a single field from OGC API response to MCP object property.",
+      "required": ["ogc_field", "mcp_field", "transform"],
+      "properties": {
+        "ogc_field": {
+          "type": "string",
+          "description": "JSON path to the field in the OGC API response."
+        },
+        "mcp_field": {
+          "type": "string",
+          "description": "Target field in the MCP object."
+        },
+        "transform": {
+          "type": "string",
+          "enum": ["direct", "template", "concatenate", "json_serialize", "extract_bbox", "derive_uri", "compute"],
+          "description": "The transformation applied during mapping."
+        },
+        "transform_expression": {
+          "type": "string",
+          "description": "Expression for non-direct transforms (template string, computation formula, etc.)."
+        }
+      }
+    },
+
+    "OGCCommonMapping": {
+      "type": "object",
+      "description": "Mappings for OGC API - Common concepts shared across all OGC API types.",
+      "required": ["landing_page", "conformance", "collections_list"],
+      "properties": {
+        "landing_page": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Landing page (/) → MCP Tool for server discovery."
+        },
+        "conformance": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Conformance (/conformance) → MCP Tool for capability detection."
+        },
+        "collections_list": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Collections list (/collections) → MCP Tool for listing available datasets."
+        },
+        "collection_metadata": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Individual collection (/collections/{id}) → MCP Resource for dataset context."
+        }
+      }
+    },
+
+    "OGCFeaturesMapping": {
+      "type": "object",
+      "description": "Mappings specific to OGC API - Features. Features are real-world things (buildings, rivers, parks) described by geometry plus properties.",
+      "required": ["collection_as_resource", "get_features", "get_feature_by_id", "spatial_query"],
+      "properties": {
+        "collection_as_resource": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Feature collection metadata → MCP Resource. The LLM reads collection metadata (title, description, extent, schema) to understand what data is available before querying."
+        },
+        "get_features": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/items → MCP Tool. The primary data access operation — retrieves features with optional bbox, limit, datetime, and property filters."
+        },
+        "get_feature_by_id": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/items/{featureId} → MCP Tool. Retrieves a single feature by its canonical identifier."
+        },
+        "spatial_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Bbox-filtered feature query → MCP Tool. Enables the LLM to retrieve features within a geographic bounding box."
+        },
+        "queryables": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/queryables → MCP Resource. Exposes which properties can be used in filter expressions, helping the LLM construct valid queries."
+        },
+        "feature_analysis_prompt": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Feature analysis workflow → MCP Prompt. A reusable prompt template that guides the LLM through discovering, querying, and analyzing feature data."
+        }
+      }
+    },
+
+    "OGCRecordsMapping": {
+      "type": "object",
+      "description": "Mappings specific to OGC API - Records. Records are metadata catalog entries that describe geospatial resources for discovery.",
+      "required": ["catalog_as_resource", "search_records", "get_record_by_id"],
+      "properties": {
+        "catalog_as_resource": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Record catalog → MCP Resource. The catalog description provides context about what datasets are discoverable."
+        },
+        "search_records": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{catalogId}/items?q=...&bbox=...&datetime=... → MCP Tool. Full-text and spatial search across catalog records."
+        },
+        "get_record_by_id": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{catalogId}/items/{recordId} → MCP Tool. Retrieve detailed metadata for a specific catalog record."
+        },
+        "catalog_discovery_prompt": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Data discovery workflow → MCP Prompt. Guides the LLM through searching catalogs and selecting appropriate datasets."
+        }
+      }
+    },
+
+    "OGCEDRMapping": {
+      "type": "object",
+      "description": "Mappings specific to OGC API - Environmental Data Retrieval. EDR provides lightweight spatio-temporal sampling queries (position, area, trajectory, corridor) against environmental data resources.",
+      "required": ["edr_collection_as_resource", "position_query", "area_query", "cube_query"],
+      "properties": {
+        "edr_collection_as_resource": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "EDR collection metadata → MCP Resource. Includes parameter names, supported query types, and data extent — essential context for the LLM to know what environmental data is queryable."
+        },
+        "position_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/position?coords=...&parameter-name=...&datetime=... → MCP Tool. Retrieves environmental data at a point location."
+        },
+        "area_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/area?coords=...&parameter-name=... → MCP Tool. Retrieves environmental data within a polygon area."
+        },
+        "trajectory_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/trajectory?coords=... → MCP Tool. Retrieves environmental data along a trajectory path."
+        },
+        "cube_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/cube?bbox=...&parameter-name=... → MCP Tool. Retrieves environmental data within a bounding box, essentially a restricted polygon."
+        },
+        "radius_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/radius?coords=...&within=... → MCP Tool. Retrieves environmental data within a radius of a point."
+        },
+        "locations_query": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /collections/{id}/locations → MCP Tool. Lists pre-defined sampling locations by name rather than coordinates."
+        },
+        "environmental_analysis_prompt": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Environmental data analysis workflow → MCP Prompt. Guides the LLM through selecting parameters, choosing query patterns, and interpreting CoverageJSON results."
+        }
+      }
+    },
+
+    "OGCProcessesMapping": {
+      "type": "object",
+      "description": "Mappings specific to OGC API - Processes. Processes are executable geospatial operations (buffer, statistics, analysis) that can be invoked via the API.",
+      "required": ["process_as_tool", "process_list", "execute_process", "job_status", "job_results"],
+      "properties": {
+        "process_as_tool": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "OGC Process description → dynamically generated MCP Tool. Each registered process becomes an independently callable tool with inputSchema derived from the process description. This is the most important mapping in the project."
+        },
+        "process_list": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /processes → MCP Tool. Discovers all available processes on a server."
+        },
+        "execute_process": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "POST /processes/{id}/execution → MCP Tool. Submits a process execution request with JSON inputs."
+        },
+        "job_status": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /jobs/{jobId} → MCP Tool. Monitors the status of an asynchronous process execution."
+        },
+        "job_results": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "GET /jobs/{jobId}/results → MCP Tool. Retrieves the output of a completed process."
+        },
+        "dismiss_job": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "DELETE /jobs/{jobId} → MCP Tool. Cancels a running or removes a completed job."
+        },
+        "process_execution_prompt": {
+          "$ref": "#/$defs/MappingRule",
+          "description": "Process execution workflow → MCP Prompt. Guides the LLM through discovering, configuring, executing, and retrieving results from geospatial processes."
+        }
+      }
+    }
+  }
+}

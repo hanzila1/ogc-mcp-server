@@ -1,0 +1,821 @@
+{
+  "$schema": "./ogc-mcp-mapping.schema.json",
+  "metadata": {
+    "title": "OGC API to MCP Mapping Specification",
+    "version": "1.0.0",
+    "ogc_api_versions": {
+      "common": "1.0.0",
+      "features": "1.0.1 (Part 1: Core)",
+      "records": "1.0.0 (Part 1: Core)",
+      "edr": "1.1.0",
+      "processes": "1.0.0 (Part 1: Core)"
+    },
+    "mcp_version": "2025-11-25",
+    "license": "Apache-2.0",
+    "authors": [
+      "Hanzila Bin Younus",
+      "Benjamin Pross (mentor, 52°North)",
+      "Benedikt Gräler (mentor, 52°North)"
+    ]
+  },
+
+  "mappings": {
+
+    "common": {
+      "landing_page": {
+        "ogc_concept": "Landing Page",
+        "ogc_endpoint": "/",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "The landing page is an active discovery operation the LLM invokes to learn about a server's capabilities, title, description, and conformance. It requires an action (HTTP request) and returns information, making it a Tool rather than a static Resource.",
+        "mapping_details": {
+          "mcp_name_template": "discover_ogc_server",
+          "mcp_description_template": "Discover an OGC API server's capabilities, title, and description. Use this as the first step when connecting to a new geospatial data server.",
+          "field_mappings": [
+            { "ogc_field": "$.title", "mcp_field": "result.title", "transform": "direct" },
+            { "ogc_field": "$.description", "mcp_field": "result.description", "transform": "direct" },
+            { "ogc_field": "$.links[*].rel", "mcp_field": "result.capabilities", "transform": "compute", "transform_expression": "Extract unique rel values that indicate API capabilities (e.g., 'data' → features, 'processes' → processes, 'jobs' → async execution)" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url"],
+          "properties": {
+            "server_url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Base URL of the OGC API server (e.g., https://example.org/ogcapi)"
+            }
+          }
+        }
+      },
+
+      "conformance": {
+        "ogc_concept": "Conformance Declaration",
+        "ogc_endpoint": "/conformance",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Conformance classes tell the LLM exactly which API capabilities a server implements. This is an active query that returns structured capability information — a Tool the LLM uses to determine valid operations before attempting them.",
+        "mapping_details": {
+          "mcp_name_template": "get_conformance",
+          "mcp_description_template": "Check which OGC API conformance classes a server implements. Use this to verify if a server supports specific capabilities like filtering, CRS transforms, or async processing.",
+          "field_mappings": [
+            { "ogc_field": "$.conformsTo", "mcp_field": "result.conformance_classes", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+
+      "collections_list": {
+        "ogc_concept": "Collections Listing",
+        "ogc_endpoint": "/collections",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Listing all collections is an active discovery operation. The LLM calls this to see what datasets a server offers. It returns a dynamic list that may change as data is added/removed, making it a Tool rather than a static Resource.",
+        "mapping_details": {
+          "mcp_name_template": "get_collections",
+          "mcp_description_template": "List all available geospatial data collections on an OGC API server. Returns collection IDs, titles, descriptions, and spatial extents.",
+          "field_mappings": [
+            { "ogc_field": "$.collections[*].id", "mcp_field": "result[*].id", "transform": "direct" },
+            { "ogc_field": "$.collections[*].title", "mcp_field": "result[*].title", "transform": "direct" },
+            { "ogc_field": "$.collections[*].description", "mcp_field": "result[*].description", "transform": "direct" },
+            { "ogc_field": "$.collections[*].extent.spatial.bbox", "mcp_field": "result[*].bbox", "transform": "extract_bbox" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+
+      "collection_metadata": {
+        "ogc_concept": "Collection Metadata",
+        "ogc_endpoint": "/collections/{collectionId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Resource",
+        "rationale": "An individual collection's metadata is relatively stable context that an LLM reads to understand a dataset before querying it. It has a canonical URI and provides descriptive information — perfect for an MCP Resource that the client can attach to the conversation context.",
+        "mapping_details": {
+          "mcp_name_template": "{collection.title}",
+          "mcp_description_template": "{collection.description} | Spatial extent: lon [{bbox[0]:.2f}, {bbox[2]:.2f}], lat [{bbox[1]:.2f}, {bbox[3]:.2f}] | Item type: {collection.itemType}",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "resource.uri", "transform": "derive_uri", "transform_expression": "ogc://{server_host}/collections/{id}" },
+            { "ogc_field": "$.title", "mcp_field": "resource.name", "transform": "direct" },
+            { "ogc_field": "$.description", "mcp_field": "resource.description", "transform": "template" },
+            { "ogc_field": "$.extent", "mcp_field": "resource.description (appended)", "transform": "extract_bbox" }
+          ]
+        },
+        "uri_scheme": "ogc://{server_host}/collections/{collection_id}"
+      }
+    },
+
+    "features": {
+      "collection_as_resource": {
+        "ogc_concept": "Feature Collection",
+        "ogc_endpoint": "/collections/{collectionId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Resource",
+        "rationale": "A Feature Collection is a dataset of real-world things (buildings, rivers, parks). Its metadata provides essential context for the LLM: what kind of features exist, their geographic extent, and what properties they have. This is read-only context — a Resource the LLM consults before making queries.",
+        "mapping_details": {
+          "mcp_name_template": "{collection.title}",
+          "mcp_description_template": "{collection.description} | Spatial extent: {bbox_formatted} | Item type: {itemType}",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "resource.uri", "transform": "derive_uri", "transform_expression": "ogc://{server}/collections/{id}" },
+            { "ogc_field": "$.title", "mcp_field": "resource.name", "transform": "direct" },
+            { "ogc_field": "$.description", "mcp_field": "resource.description", "transform": "concatenate", "transform_expression": "Join description + extent + itemType with ' | '" },
+            { "ogc_field": "$.extent.spatial.bbox[0]", "mcp_field": "resource.description (bbox part)", "transform": "extract_bbox" },
+            { "ogc_field": "$.itemType", "mcp_field": "resource.description (itemType part)", "transform": "template" }
+          ]
+        },
+        "uri_scheme": "ogc://{server_host}/collections/{collection_id}"
+      },
+
+      "get_features": {
+        "ogc_concept": "Feature Items",
+        "ogc_endpoint": "/collections/{collectionId}/items",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Fetching features is an active query with parameters (bbox, limit, datetime, property filters). The LLM must construct and send a request — this is clearly a Tool. Results are GeoJSON FeatureCollections containing geometry and properties.",
+        "mapping_details": {
+          "mcp_name_template": "get_features",
+          "mcp_description_template": "Retrieve geospatial features from a collection. Supports bounding box spatial filter, datetime filter, limit, and property-based filtering. Returns GeoJSON.",
+          "field_mappings": [
+            { "ogc_field": "$.features[*]", "mcp_field": "result.features", "transform": "json_serialize" },
+            { "ogc_field": "$.numberMatched", "mcp_field": "result.total_count", "transform": "direct" },
+            { "ogc_field": "$.numberReturned", "mcp_field": "result.returned_count", "transform": "direct" },
+            { "ogc_field": "$.links[?(@.rel=='next')]", "mcp_field": "result.next_page", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id"],
+          "properties": {
+            "server_url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Base URL of the OGC API server"
+            },
+            "collection_id": {
+              "type": "string",
+              "description": "Identifier of the feature collection to query"
+            },
+            "bbox": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 6,
+              "description": "Bounding box filter [west, south, east, north] in WGS84 longitude/latitude"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 10,
+              "description": "Maximum number of features to return"
+            },
+            "datetime": {
+              "type": "string",
+              "description": "Temporal filter. Supports instant (2024-01-01T00:00:00Z) or interval (2024-01-01/2024-12-31)"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Starting index for pagination"
+            }
+          }
+        }
+      },
+
+      "get_feature_by_id": {
+        "ogc_concept": "Feature Item",
+        "ogc_endpoint": "/collections/{collectionId}/items/{featureId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Fetching a single feature by ID is a targeted lookup operation. The LLM needs to know the collection and feature ID, then retrieve the specific geometry and properties. An active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "get_feature_by_id",
+          "mcp_description_template": "Retrieve a single geospatial feature by its unique identifier from a specific collection. Returns the complete GeoJSON Feature with geometry and all properties.",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "result.feature_id", "transform": "direct" },
+            { "ogc_field": "$.geometry", "mcp_field": "result.geometry", "transform": "json_serialize" },
+            { "ogc_field": "$.properties", "mcp_field": "result.properties", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "feature_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string", "description": "Collection containing the feature" },
+            "feature_id": { "type": "string", "description": "Unique identifier of the feature" }
+          }
+        }
+      },
+
+      "spatial_query": {
+        "ogc_concept": "Spatial Bounding Box Query",
+        "ogc_endpoint": "/collections/{collectionId}/items?bbox={bbox}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Spatial queries are the core use case for geospatial data access. The LLM specifies a geographic area and retrieves all features within it. This is a parameterized action → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "spatial_query_features",
+          "mcp_description_template": "Query features within a geographic bounding box. The LLM can specify west/south/east/north coordinates to spatially filter results.",
+          "field_mappings": [
+            { "ogc_field": "$.features[*]", "mcp_field": "result.features", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "bbox"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "bbox": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4,
+              "description": "[west_lon, south_lat, east_lon, north_lat] in WGS84"
+            },
+            "limit": { "type": "integer", "default": 100 }
+          }
+        }
+      },
+
+      "queryables": {
+        "ogc_concept": "Queryables",
+        "ogc_endpoint": "/collections/{collectionId}/queryables",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Resource",
+        "rationale": "Queryables describe which properties of a collection can be used in filter expressions. This is schema-level metadata the LLM reads to understand what filters are valid — stable context that informs query construction. A Resource.",
+        "mapping_details": {
+          "mcp_name_template": "Queryable properties of {collection.title}",
+          "mcp_description_template": "Properties that can be used in filter expressions for querying {collection.title}. Includes property names, types, and constraints.",
+          "field_mappings": [
+            { "ogc_field": "$.properties", "mcp_field": "resource.content", "transform": "json_serialize" }
+          ]
+        },
+        "uri_scheme": "ogc://{server_host}/collections/{collection_id}/queryables"
+      },
+
+      "feature_analysis_prompt": {
+        "ogc_concept": "Feature Analysis Workflow",
+        "ogc_endpoint": "N/A (composite workflow)",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Prompt",
+        "rationale": "A reusable, multi-step workflow template that guides the LLM through: (1) discover server, (2) list collections, (3) read collection metadata, (4) query features with appropriate filters, (5) analyze and summarize results. Prompts are user-triggered templates — perfect for encoding domain expertise.",
+        "mapping_details": {
+          "mcp_name_template": "spatial_analysis_workflow",
+          "mcp_description_template": "A step-by-step workflow for spatial feature analysis. Guides you through discovering data, querying features, and analyzing geospatial results.",
+          "field_mappings": []
+        }
+      }
+    },
+
+    "records": {
+      "catalog_as_resource": {
+        "ogc_concept": "Record Catalog",
+        "ogc_endpoint": "/collections/{catalogId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Resource",
+        "rationale": "A catalog's metadata describes what kinds of geospatial resources are discoverable within it. This is context the LLM reads to understand the scope of a catalog before searching — a Resource.",
+        "mapping_details": {
+          "mcp_name_template": "{catalog.title}",
+          "mcp_description_template": "Metadata catalog: {catalog.description}. Contains discoverable records of geospatial datasets, services, and resources.",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "resource.uri", "transform": "derive_uri", "transform_expression": "ogc://{server}/catalogs/{id}" },
+            { "ogc_field": "$.title", "mcp_field": "resource.name", "transform": "direct" },
+            { "ogc_field": "$.description", "mcp_field": "resource.description", "transform": "template" }
+          ]
+        },
+        "uri_scheme": "ogc://{server_host}/catalogs/{catalog_id}"
+      },
+
+      "search_records": {
+        "ogc_concept": "Catalog Search",
+        "ogc_endpoint": "/collections/{catalogId}/items",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Searching a catalog is an active query with text search (q parameter), spatial filter (bbox), temporal filter (datetime), and type filtering. The LLM constructs a search query to find relevant datasets — clearly a Tool. Records extends Features with additional search parameters.",
+        "mapping_details": {
+          "mcp_name_template": "search_catalog",
+          "mcp_description_template": "Search a geospatial metadata catalog for datasets, services, and resources. Supports full-text search, spatial bounding box, temporal filters, and type filtering.",
+          "field_mappings": [
+            { "ogc_field": "$.features[*].properties.title", "mcp_field": "result[*].title", "transform": "direct" },
+            { "ogc_field": "$.features[*].properties.description", "mcp_field": "result[*].description", "transform": "direct" },
+            { "ogc_field": "$.features[*].properties.type", "mcp_field": "result[*].resource_type", "transform": "direct" },
+            { "ogc_field": "$.features[*].properties.created", "mcp_field": "result[*].created", "transform": "direct" },
+            { "ogc_field": "$.features[*].properties.updated", "mcp_field": "result[*].updated", "transform": "direct" },
+            { "ogc_field": "$.features[*].links", "mcp_field": "result[*].access_links", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "catalog_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "catalog_id": {
+              "type": "string",
+              "description": "Identifier of the catalog collection to search"
+            },
+            "q": {
+              "type": "string",
+              "description": "Full-text search terms. If any server-chosen text field in a record contains one or more of these terms, the record matches."
+            },
+            "bbox": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4,
+              "description": "Spatial filter [west, south, east, north]"
+            },
+            "datetime": {
+              "type": "string",
+              "description": "Temporal filter as instant or interval"
+            },
+            "type": {
+              "type": "string",
+              "description": "Filter by record type (e.g., 'dataset', 'service', 'application')"
+            },
+            "limit": {
+              "type": "integer",
+              "default": 10,
+              "description": "Maximum number of records to return"
+            },
+            "externalids": {
+              "type": "string",
+              "description": "Comma-separated list of external identifiers to filter by"
+            }
+          }
+        }
+      },
+
+      "get_record_by_id": {
+        "ogc_concept": "Catalog Record",
+        "ogc_endpoint": "/collections/{catalogId}/items/{recordId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Retrieving a specific catalog record by ID to get full metadata about a geospatial resource. The LLM uses this to drill into a search result and understand a dataset's provenance, licensing, access methods, and quality. An active lookup → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "get_catalog_record",
+          "mcp_description_template": "Retrieve detailed metadata about a specific geospatial resource from a catalog. Returns title, description, provenance, licensing, access links, conformance, and quality information.",
+          "field_mappings": [
+            { "ogc_field": "$.properties.title", "mcp_field": "result.title", "transform": "direct" },
+            { "ogc_field": "$.properties.description", "mcp_field": "result.description", "transform": "direct" },
+            { "ogc_field": "$.properties.type", "mcp_field": "result.resource_type", "transform": "direct" },
+            { "ogc_field": "$.properties.license", "mcp_field": "result.license", "transform": "direct" },
+            { "ogc_field": "$.geometry", "mcp_field": "result.spatial_extent", "transform": "json_serialize" },
+            { "ogc_field": "$.links", "mcp_field": "result.access_links", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "catalog_id", "record_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "catalog_id": { "type": "string" },
+            "record_id": { "type": "string", "description": "Unique identifier of the catalog record" }
+          }
+        }
+      },
+
+      "catalog_discovery_prompt": {
+        "ogc_concept": "Data Discovery Workflow",
+        "ogc_endpoint": "N/A (composite workflow)",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Prompt",
+        "rationale": "A prompt template encoding the data discovery pattern: (1) identify user's data need, (2) search catalogs with appropriate terms, (3) evaluate results by quality/license/recency, (4) select best dataset, (5) provide access instructions. Encapsulates domain expertise into a reusable template.",
+        "mapping_details": {
+          "mcp_name_template": "data_discovery_workflow",
+          "mcp_description_template": "Find the right geospatial dataset for your needs. Guides you through searching catalogs, evaluating metadata, and accessing the best matching resource.",
+          "field_mappings": []
+        }
+      }
+    },
+
+    "edr": {
+      "edr_collection_as_resource": {
+        "ogc_concept": "EDR Collection",
+        "ogc_endpoint": "/collections/{collectionId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Resource",
+        "rationale": "An EDR collection's metadata is rich context the LLM needs: parameter names (temperature, precipitation), supported query types (position, area, trajectory), spatial/temporal extent, and data CRS. This stable metadata informs all subsequent queries — a Resource.",
+        "mapping_details": {
+          "mcp_name_template": "{collection.title}",
+          "mcp_description_template": "Environmental data: {collection.description} | Parameters: {parameter_names} | Query types: {data_queries} | Extent: {extent_formatted}",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "resource.uri", "transform": "derive_uri", "transform_expression": "ogc://{server}/edr/{id}" },
+            { "ogc_field": "$.title", "mcp_field": "resource.name", "transform": "direct" },
+            { "ogc_field": "$.parameter_names", "mcp_field": "resource.description (parameters)", "transform": "compute", "transform_expression": "Extract keys from parameter_names object as comma-separated list" },
+            { "ogc_field": "$.data_queries", "mcp_field": "resource.description (query types)", "transform": "compute", "transform_expression": "Extract keys from data_queries object (position, area, cube, etc.)" },
+            { "ogc_field": "$.extent", "mcp_field": "resource.description (extent)", "transform": "extract_bbox" }
+          ]
+        },
+        "uri_scheme": "ogc://{server_host}/edr/{collection_id}"
+      },
+
+      "position_query": {
+        "ogc_concept": "Position Query",
+        "ogc_endpoint": "/collections/{collectionId}/position",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "A position query retrieves environmental data at a specific point location. The LLM specifies coordinates, parameters, and time range — an active parameterized query → Tool. Returns CoverageJSON.",
+        "mapping_details": {
+          "mcp_name_template": "edr_position_query",
+          "mcp_description_template": "Query environmental data at a specific geographic point. Returns parameter values (temperature, precipitation, etc.) at the given coordinates for specified time range. Results in CoverageJSON format.",
+          "field_mappings": [
+            { "ogc_field": "$.ranges", "mcp_field": "result.parameter_values", "transform": "json_serialize" },
+            { "ogc_field": "$.domain.axes", "mcp_field": "result.domain", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "coords"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "coords": {
+              "type": "string",
+              "description": "Well-Known Text POINT geometry (e.g., 'POINT(-70.31 43.68)')"
+            },
+            "parameter_name": {
+              "type": "string",
+              "description": "Comma-separated list of parameter names to retrieve (e.g., 'temperature,precipitation')"
+            },
+            "datetime": {
+              "type": "string",
+              "description": "Temporal filter: instant or interval (e.g., '2024-01-01/2024-12-31')"
+            },
+            "z": {
+              "type": "string",
+              "description": "Vertical level filter (e.g., '850' for 850 hPa pressure level)"
+            },
+            "crs": {
+              "type": "string",
+              "description": "Coordinate reference system URI"
+            },
+            "f": {
+              "type": "string",
+              "enum": ["CoverageJSON", "GeoJSON", "JSON"],
+              "default": "CoverageJSON",
+              "description": "Output format"
+            }
+          }
+        }
+      },
+
+      "area_query": {
+        "ogc_concept": "Area Query",
+        "ogc_endpoint": "/collections/{collectionId}/area",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "An area query retrieves environmental data within a polygon. The LLM specifies a WKT polygon plus parameters and time — an active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "edr_area_query",
+          "mcp_description_template": "Query environmental data within a geographic polygon area. Specify a WKT POLYGON and receive parameter values for all points within that area.",
+          "field_mappings": [
+            { "ogc_field": "$.ranges", "mcp_field": "result.parameter_values", "transform": "json_serialize" },
+            { "ogc_field": "$.domain", "mcp_field": "result.domain", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "coords"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "coords": {
+              "type": "string",
+              "description": "Well-Known Text POLYGON geometry (e.g., 'POLYGON((-70 40, -70 45, -65 45, -65 40, -70 40))')"
+            },
+            "parameter_name": { "type": "string" },
+            "datetime": { "type": "string" },
+            "z": { "type": "string" },
+            "f": { "type": "string", "default": "CoverageJSON" }
+          }
+        }
+      },
+
+      "trajectory_query": {
+        "ogc_concept": "Trajectory Query",
+        "ogc_endpoint": "/collections/{collectionId}/trajectory",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Trajectory queries sample environmental data along a path (e.g., flight route, river course). The LLM provides a LINESTRING geometry — an active parameterized query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "edr_trajectory_query",
+          "mcp_description_template": "Query environmental data along a trajectory path. Useful for sampling conditions along routes, flight paths, or transects.",
+          "field_mappings": [
+            { "ogc_field": "$.ranges", "mcp_field": "result.parameter_values", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "coords"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "coords": {
+              "type": "string",
+              "description": "Well-Known Text LINESTRING geometry defining the trajectory"
+            },
+            "parameter_name": { "type": "string" },
+            "datetime": { "type": "string" },
+            "z": { "type": "string" },
+            "f": { "type": "string", "default": "CoverageJSON" }
+          }
+        }
+      },
+
+      "cube_query": {
+        "ogc_concept": "Cube Query",
+        "ogc_endpoint": "/collections/{collectionId}/cube",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Cube queries retrieve environmental data within a bounding box — a restricted polygon case. Common for gridded data subsetting. Active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "edr_cube_query",
+          "mcp_description_template": "Query environmental data within a bounding box (cube). Efficiently subsets gridded data like climate models, digital elevation models, or weather reanalysis.",
+          "field_mappings": [
+            { "ogc_field": "$.ranges", "mcp_field": "result.parameter_values", "transform": "json_serialize" },
+            { "ogc_field": "$.domain", "mcp_field": "result.domain", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "bbox"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "bbox": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 6,
+              "description": "Bounding box [west, south, east, north] with optional [minZ, maxZ]"
+            },
+            "parameter_name": { "type": "string" },
+            "datetime": { "type": "string" },
+            "z": { "type": "string" },
+            "f": { "type": "string", "default": "CoverageJSON" }
+          }
+        }
+      },
+
+      "radius_query": {
+        "ogc_concept": "Radius Query",
+        "ogc_endpoint": "/collections/{collectionId}/radius",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Radius queries retrieve data within a specified distance of a point — useful for 'find nearby' scenarios. Active parameterized query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "edr_radius_query",
+          "mcp_description_template": "Query environmental data within a radius of a geographic point. Useful for finding nearby observations or gridded data around a location of interest.",
+          "field_mappings": [
+            { "ogc_field": "$.ranges", "mcp_field": "result.parameter_values", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id", "coords", "within"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" },
+            "coords": { "type": "string", "description": "WKT POINT geometry" },
+            "within": { "type": "number", "description": "Search radius in meters" },
+            "within_units": { "type": "string", "default": "m", "description": "Units for radius (m, km)" },
+            "parameter_name": { "type": "string" },
+            "datetime": { "type": "string" },
+            "f": { "type": "string", "default": "CoverageJSON" }
+          }
+        }
+      },
+
+      "locations_query": {
+        "ogc_concept": "Locations Query",
+        "ogc_endpoint": "/collections/{collectionId}/locations",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Lists pre-defined or pre-existing monitoring/sampling locations by name. The LLM can then query a specific location by ID without needing coordinates. Active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "edr_list_locations",
+          "mcp_description_template": "List predefined sampling locations for an environmental data collection. Returns location names and identifiers that can be used to query data by location name instead of coordinates.",
+          "field_mappings": [
+            { "ogc_field": "$.features[*].id", "mcp_field": "result[*].location_id", "transform": "direct" },
+            { "ogc_field": "$.features[*].properties.name", "mcp_field": "result[*].location_name", "transform": "direct" },
+            { "ogc_field": "$.features[*].geometry", "mcp_field": "result[*].geometry", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "collection_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "collection_id": { "type": "string" }
+          }
+        }
+      },
+
+      "environmental_analysis_prompt": {
+        "ogc_concept": "Environmental Data Analysis Workflow",
+        "ogc_endpoint": "N/A (composite workflow)",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Prompt",
+        "rationale": "Encodes the multi-step workflow for environmental data analysis: (1) discover available parameters, (2) select appropriate query pattern based on user need (point vs area vs trajectory), (3) construct query with correct WKT geometry, (4) interpret CoverageJSON results, (5) provide analysis. Domain expertise as a reusable Prompt.",
+        "mapping_details": {
+          "mcp_name_template": "environmental_analysis_workflow",
+          "mcp_description_template": "Analyze environmental data step by step. Helps you choose the right query pattern, construct appropriate geometries, and interpret CoverageJSON results.",
+          "field_mappings": []
+        }
+      }
+    },
+
+    "processes": {
+      "process_as_tool": {
+        "ogc_concept": "OGC Process (dynamic)",
+        "ogc_endpoint": "/processes/{processId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "THIS IS THE MOST IMPORTANT MAPPING IN THE PROJECT. Each OGC Process has a formal JSON Schema describing its inputs and outputs. We translate that schema directly into an MCP Tool's inputSchema. This means any process registered on any OGC server automatically becomes a callable LLM tool — zero manual configuration. The OGC process description IS the MCP Tool definition.",
+        "mapping_details": {
+          "mcp_name_template": "execute_{process.id}",
+          "mcp_description_template": "Execute the '{process.title}' geospatial process. {process.description}. Required inputs: {input_names}.",
+          "field_mappings": [
+            { "ogc_field": "$.id", "mcp_field": "tool.name", "transform": "template", "transform_expression": "execute_{id} (with hyphens replaced by underscores)" },
+            { "ogc_field": "$.title", "mcp_field": "tool.description (title part)", "transform": "direct" },
+            { "ogc_field": "$.description", "mcp_field": "tool.description (description part)", "transform": "direct" },
+            { "ogc_field": "$.inputs", "mcp_field": "tool.inputSchema.properties", "transform": "compute", "transform_expression": "For each input: create a JSON Schema property with type, description, and constraints from the OGC input schema. Add 'server_url' as an additional required property." },
+            { "ogc_field": "$.outputs", "mcp_field": "tool.description (outputs part)", "transform": "template", "transform_expression": "Append 'Outputs: {output_names}' to description" }
+          ]
+        }
+      },
+
+      "process_list": {
+        "ogc_concept": "Process List",
+        "ogc_endpoint": "/processes",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Listing available processes is active discovery. The LLM queries a server to find what geospatial operations are available. Returns process IDs, titles, and descriptions. Active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "discover_processes",
+          "mcp_description_template": "List all geospatial processing operations available on an OGC API server. Returns process identifiers, titles, descriptions, and input/output summaries.",
+          "field_mappings": [
+            { "ogc_field": "$.processes[*].id", "mcp_field": "result[*].id", "transform": "direct" },
+            { "ogc_field": "$.processes[*].title", "mcp_field": "result[*].title", "transform": "direct" },
+            { "ogc_field": "$.processes[*].description", "mcp_field": "result[*].description", "transform": "direct" },
+            { "ogc_field": "$.processes[*].version", "mcp_field": "result[*].version", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+
+      "execute_process": {
+        "ogc_concept": "Process Execution",
+        "ogc_endpoint": "/processes/{processId}/execution",
+        "ogc_http_method": "POST",
+        "mcp_primitive": "Tool",
+        "rationale": "Process execution is the most clearly action-oriented operation — the LLM submits inputs and triggers a computation. Supports both synchronous (immediate results) and asynchronous (job monitoring) execution patterns. Active execution → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "execute_process",
+          "mcp_description_template": "Execute a geospatial processing operation. Submit input data and parameters to run the process. For synchronous execution, results are returned immediately. For asynchronous execution, a job ID is returned for status monitoring.",
+          "field_mappings": [
+            { "ogc_field": "$.outputs (sync)", "mcp_field": "result.outputs", "transform": "json_serialize" },
+            { "ogc_field": "$.jobID (async)", "mcp_field": "result.job_id", "transform": "direct" },
+            { "ogc_field": "$.status (async)", "mcp_field": "result.status", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "process_id", "inputs"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "process_id": { "type": "string", "description": "Identifier of the process to execute" },
+            "inputs": {
+              "type": "object",
+              "description": "Process input values as key-value pairs. Keys must match the process input schema."
+            },
+            "outputs": {
+              "type": "object",
+              "description": "Optional output configuration. Specify which outputs to include and their format."
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["sync", "async"],
+              "default": "sync",
+              "description": "Execution mode: sync returns results immediately, async returns a job ID"
+            },
+            "response": {
+              "type": "string",
+              "enum": ["raw", "document"],
+              "default": "document",
+              "description": "Response type: raw returns only the output value, document returns full status info"
+            }
+          }
+        }
+      },
+
+      "job_status": {
+        "ogc_concept": "Job Status",
+        "ogc_endpoint": "/jobs/{jobId}",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Checking job status is an active polling operation the LLM uses to monitor async process execution. Returns status (accepted, running, successful, failed), progress percentage, and timing. Active query → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "get_job_status",
+          "mcp_description_template": "Check the execution status of an asynchronous geospatial processing job. Returns current status, progress percentage, start/end times, and any error messages.",
+          "field_mappings": [
+            { "ogc_field": "$.jobID", "mcp_field": "result.job_id", "transform": "direct" },
+            { "ogc_field": "$.status", "mcp_field": "result.status", "transform": "direct" },
+            { "ogc_field": "$.progress", "mcp_field": "result.progress", "transform": "direct" },
+            { "ogc_field": "$.created", "mcp_field": "result.created", "transform": "direct" },
+            { "ogc_field": "$.started", "mcp_field": "result.started", "transform": "direct" },
+            { "ogc_field": "$.finished", "mcp_field": "result.finished", "transform": "direct" },
+            { "ogc_field": "$.message", "mcp_field": "result.message", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "job_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "job_id": { "type": "string", "description": "Job identifier returned from process execution" }
+          }
+        }
+      },
+
+      "job_results": {
+        "ogc_concept": "Job Results",
+        "ogc_endpoint": "/jobs/{jobId}/results",
+        "ogc_http_method": "GET",
+        "mcp_primitive": "Tool",
+        "rationale": "Retrieving job results fetches the output of a completed process. The LLM calls this after confirming job status is 'successful'. Returns the actual computed data (GeoJSON, CoverageJSON, etc.). Active retrieval → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "get_job_results",
+          "mcp_description_template": "Retrieve the output results of a completed geospatial processing job. Call this after confirming job status is 'successful'. Returns the computed output data.",
+          "field_mappings": [
+            { "ogc_field": "$.*", "mcp_field": "result.outputs", "transform": "json_serialize" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "job_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "job_id": { "type": "string" }
+          }
+        }
+      },
+
+      "dismiss_job": {
+        "ogc_concept": "Job Dismissal",
+        "ogc_endpoint": "/jobs/{jobId}",
+        "ogc_http_method": "DELETE",
+        "mcp_primitive": "Tool",
+        "rationale": "Cancelling or dismissing a job is a destructive action the LLM can take to stop a running process or clean up completed jobs. Active mutation → Tool.",
+        "mapping_details": {
+          "mcp_name_template": "dismiss_job",
+          "mcp_description_template": "Cancel a running job or remove a completed job from the server. Use to stop long-running processes or clean up finished jobs.",
+          "field_mappings": [
+            { "ogc_field": "$.status", "mcp_field": "result.final_status", "transform": "direct" }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "required": ["server_url", "job_id"],
+          "properties": {
+            "server_url": { "type": "string", "format": "uri" },
+            "job_id": { "type": "string" }
+          }
+        }
+      },
+
+      "process_execution_prompt": {
+        "ogc_concept": "Process Execution Workflow",
+        "ogc_endpoint": "N/A (composite workflow)",
+        "ogc_http_method": "POST",
+        "mcp_primitive": "Prompt",
+        "rationale": "The cool spot analysis scenario from the project description is exactly this: a multi-step workflow prompt that guides the LLM through (1) discovering available processes, (2) reading process input schemas, (3) prompting user for or prefilling required inputs, (4) validating inputs, (5) executing the process, (6) monitoring job status, (7) retrieving and presenting results. This Prompt encapsulates the entire urban planner use case.",
+        "mapping_details": {
+          "mcp_name_template": "process_execution_workflow",
+          "mcp_description_template": "Execute a geospatial process step by step. Guides you through discovering processes, understanding required inputs, configuring parameters, executing, and retrieving results. Supports the cool spot analysis scenario and similar use cases.",
+          "field_mappings": []
+        }
+      }
+    }
+  }
+}
