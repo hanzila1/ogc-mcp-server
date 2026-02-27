@@ -110,8 +110,38 @@ app = Server("ogc-mcp-server")
 
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
-    """Return all tools available on this MCP server."""
-    return build_discovery_tools()
+    """
+    Return all tools available on this MCP server.
+
+    Includes:
+    - 13 fixed tools (discovery, features, records, EDR, processes)
+    - Dynamic tools auto-generated from OGC Processes on the server
+
+    This implements the Stage 4 mapping rule: processes.process_as_tool
+    Each discovered process becomes its own MCP Tool with inputSchema
+    derived from the OGC process description.
+    """
+    tools = build_discovery_tools()
+
+    # Dynamic process-to-tool generation
+    try:
+        async with OGCClient(DEFAULT_SERVER_URL) as client:
+            processes = await client.get_processes()
+            for proc in processes:
+                try:
+                    # Get full process detail for input schema
+                    full_proc = await client.get_process(proc.id)
+                    tool = process_to_tool(full_proc, DEFAULT_SERVER_URL)
+                    # Avoid name collision with fixed tools
+                    if tool.name not in [t.name for t in tools]:
+                        tools.append(tool)
+                        logger.info(f"Dynamic tool registered: {tool.name}")
+                except Exception as e:
+                    logger.warning(f"Could not generate tool for process '{proc.id}': {e}")
+    except Exception as e:
+        logger.warning(f"Could not fetch processes for dynamic tools: {e}")
+
+    return tools
 
 
 @app.call_tool()
@@ -287,6 +317,20 @@ async def _dispatch_tool(name: str, args: dict) -> str:
                 datetime=args.get("datetime"),
             )
             return format_edr_query_result(result, "area")
+
+        # ══ Dynamic Process Tools ═══════════════════════════
+
+        elif name.startswith("execute_"):
+            # Dynamic process-to-tool dispatch
+            # Tool name format: execute_{process_id_with_underscores}
+            # Reverse the mapping: execute_hello_world → hello-world
+            process_id = name[len("execute_"):].replace("_", "-")
+            inputs = {k: v for k, v in args.items() if k != "server_url"}
+            result = await client.execute_process(
+                process_id=process_id,
+                inputs=inputs,
+            )
+            return json.dumps(result, indent=2, default=str)
 
         # ── Unknown ─────────────────────────────────────────
 
