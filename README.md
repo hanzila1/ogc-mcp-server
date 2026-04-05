@@ -73,49 +73,9 @@ User: "What are ocean conditions near Iceland? Is it warm or cold?"
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    USER (Natural Language)                       │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              LLM (Gemini 2.5 Flash)                             │
-│   Understands intent → selects tools → interprets results       │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │  Function Calling
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              MCP Server (FastMCP)                               │
-│                                                                 │
-│  13 Fixed Tools          Dynamic Tools (auto-generated)         │
-│  ─────────────           ────────────────────────────          │
-│  discover_server         execute_{process_id}                   │
-│  list_collections        (one per OGC process discovered)       │
-│  get_features                                                   │
-│  search_catalog          3 Resources                            │
-│  query_edr_position      ─────────                             │
-│  execute_process         ogc://collections/list                 │
-│  get_job_status          ogc://processes/list                   │
-│  get_job_results         ogc://server/info                      │
-│  ... and more                                                   │
-│                          3 Workflow Prompts                     │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │  HTTP (OGC API Standard)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              OGCClient (server-agnostic HTTP layer)             │
-│                                                                 │
-│  Any OGC-compliant server works — zero code changes needed      │
-└───────────┬──────────────────┬──────────────────┬──────────────┘
-            │                  │                  │
-            ▼                  ▼                  ▼
-   demo.pygeoapi.io    maps.gnosis.earth   localhost:5000
-   (Netherlands data,  (749 global         (Münster parks,
-    ocean/climate,      collections,        cool spot demo,
-    Dutch metadata)     elevation,          custom processes)
-                        NaturalEarth)
-```
+## Architecture
+
+![OGC MCP Server Architecture](docs/architecture.png)
 
 ### Core Modules
 
