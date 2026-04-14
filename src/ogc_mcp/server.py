@@ -58,6 +58,11 @@ try:
         # NEW Stage 5: EDR
         format_edr_query_result,
     )
+    from .catalog_discovery import (
+        discover_servers_from_topic,
+        format_discovery_results,
+        format_known_servers,
+    )
 except ImportError:
     from ogc_mcp.ogc_client import (
         OGCClient,
@@ -82,6 +87,11 @@ except ImportError:
         format_catalog_record_detail,
         # NEW Stage 5: EDR
         format_edr_query_result,
+    )
+    from ogc_mcp.catalog_discovery import (
+        discover_servers_from_topic,
+        format_discovery_results,
+        format_known_servers,
     )
 
 # ─────────────────────────────────────────────
@@ -187,6 +197,18 @@ async def call_tool(
 async def _dispatch_tool(name: str, args: dict) -> str:
     """Route tool calls to the correct OGC API operations."""
     server_url = args.get("server_url", DEFAULT_SERVER_URL)
+
+    # ── Catalog-of-Catalogs — no OGC server connection needed ──
+
+    if name == "list_known_servers":
+        return format_known_servers()
+
+    if name == "discover_servers_by_topic":
+        topic = args["topic"]
+        newly_discovered = await discover_servers_from_topic(topic)
+        return format_discovery_results(topic, newly_discovered)
+
+    # ── All other tools need an OGC server connection ───────────
 
     async with OGCClient(server_url) as client:
 

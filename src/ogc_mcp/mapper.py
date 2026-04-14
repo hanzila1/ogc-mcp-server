@@ -730,6 +730,43 @@ def build_discovery_tools() -> list[types.Tool]:
                 "required": ["server_url", "collection_id", "coords"]
             }
         ),
+
+        # ═══ Catalog-of-Catalogs Discovery Tools ════════════
+
+        types.Tool(
+            name="list_known_servers",
+            description=(
+                "List all known OGC API servers in the registry. "
+                "Shows seed servers (always available) and any servers "
+                "discovered dynamically via catalog-of-catalogs search. "
+                "Call this first to see what servers are available before querying."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        ),
+        types.Tool(
+            name="discover_servers_by_topic",
+            description=(
+                "Discover new OGC API servers by searching catalog endpoints "
+                "for a given topic. Queries OGC API Records catalogs on known "
+                "seed servers and extracts links to other OGC servers from the "
+                "results — expanding the known server registry autonomously. "
+                "Example topics: 'flood risk', 'urban heat islands', 'air quality'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "Topic to search for, e.g. 'flood risk Netherlands' or 'urban heat islands'."
+                    }
+                },
+                "required": ["topic"]
+            }
+        ),
     ]
     return tools
 
